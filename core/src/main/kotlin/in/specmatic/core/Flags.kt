@@ -4,15 +4,22 @@ import org.apache.commons.lang3.BooleanUtils
 
 object Flags {
     private const val customResponseName = "CUSTOM_RESPONSE"
-    const val negativeTestingFlag = "ENABLE_NEGATIVE_TESTING"
+    const val negativeTestingFlag = "SPECMATIC_GENERATIVE_TESTS"
+    const val maxTestRequestCombinationsFlag = "MAX_TEST_REQUEST_COMBINATIONS"
 
-    fun customResponse(): Boolean {
-        return System.getenv(customResponseName) == "true" || System.getProperty(customResponseName) == "true"
+    private fun flagValue(flagName: String): String? {
+        return System.getenv(flagName) ?: System.getProperty(flagName)
     }
 
-    fun negativeTestingEnabled(): Boolean {
-        return BooleanUtils.toBoolean(
-            System.getenv(negativeTestingFlag) ?: System.getProperty(negativeTestingFlag) ?: "false"
-        )
+    fun customResponse(): Boolean {
+        return flagValue(customResponseName) == "true"
+    }
+
+    fun generativeTestingEnabled(): Boolean {
+        return BooleanUtils.toBoolean(flagValue(negativeTestingFlag) ?: "false")
+    }
+
+    fun maxTestRequestCombinations(): Int {
+        return flagValue(maxTestRequestCombinationsFlag)?.toInt() ?: Int.MAX_VALUE
     }
 }

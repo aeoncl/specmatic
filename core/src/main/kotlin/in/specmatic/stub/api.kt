@@ -16,7 +16,7 @@ import java.io.File
 import java.time.Duration
 
 // Used by stub client code
-fun createStubFromContractAndData(contractGherkin: String, dataDirectory: String, host: String = "localhost", port: Int = 9000): HttpStub {
+fun createStubFromContractAndData(contractGherkin: String, dataDirectory: String, host: String = "localhost", port: Int = 9000): ContractStub {
     val contractBehaviour = parseGherkinStringToFeature(contractGherkin)
 
     val mocks = (File(dataDirectory).listFiles()?.filter { it.name.endsWith(".json") } ?: emptyList()).map { file ->
@@ -35,7 +35,7 @@ fun createStubFromContractAndData(contractGherkin: String, dataDirectory: String
 fun allContractsFromDirectory(dirContainingContracts: String): List<String> =
     File(dirContainingContracts).listFiles()?.filter { it.extension == CONTRACT_EXTENSION }?.map { it.absolutePath } ?: emptyList()
 
-fun createStub(host: String = "localhost", port: Int = 9000): HttpStub {
+fun createStub(host: String = "localhost", port: Int = 9000): ContractStub {
     val workingDirectory = WorkingDirectory()
     val contractPaths = contractStubPaths().map { it.path }
     val stubs = loadContractStubsFromImplicitPaths(contractPaths)
@@ -46,7 +46,7 @@ fun createStub(host: String = "localhost", port: Int = 9000): HttpStub {
 }
 
 // Used by stub client code
-fun createStub(dataDirPaths: List<String>, host: String = "localhost", port: Int = 9000): HttpStub {
+fun createStub(dataDirPaths: List<String>, host: String = "localhost", port: Int = 9000): ContractStub {
     val contractPaths = contractStubPaths().map { it.path }
     val contractInfo = loadContractStubsFromFiles(contractPaths, dataDirPaths)
     val features = contractInfo.map { it.first }
@@ -55,7 +55,7 @@ fun createStub(dataDirPaths: List<String>, host: String = "localhost", port: Int
     return HttpStub(features, httpExpectations, host, port, ::consoleLog)
 }
 
-fun createStubFromContracts(contractPaths: List<String>, dataDirPaths: List<String>, host: String = "localhost", port: Int = 9000): HttpStub {
+fun createStubFromContracts(contractPaths: List<String>, dataDirPaths: List<String>, host: String = "localhost", port: Int = 9000): ContractStub {
     val contractInfo = loadContractStubsFromFiles(contractPaths, dataDirPaths)
     val features = contractInfo.map { it.first }
     val httpExpectations = contractInfoToHttpExpectations(contractInfo)
@@ -71,7 +71,7 @@ fun loadContractStubsFromImplicitPaths(contractPaths: List<String>): List<Pair<F
                 try {
                     val feature = parseContractFileToFeature(contractPath, CommandHook(HookName.stub_load_contract))
 
-                    val implicitDataDirs = listOf(implicitContractDataDir(contractPath.path)).plus(if(customImplicitStubBase() != null) listOf(implicitContractDataDir(contractPath.path, customImplicitStubBase())) else emptyList())
+                    val implicitDataDirs = listOf(implicitContractDataDir(contractPath.path)).plus(if(customImplicitStubBase() != null) listOf(implicitContractDataDir(contractPath.path, customImplicitStubBase())) else emptyList()).sorted()
 
                     val stubData = when {
                         implicitDataDirs.any { it.isDirectory } -> {
@@ -79,12 +79,17 @@ fun loadContractStubsFromImplicitPaths(contractPaths: List<String>): List<Pair<F
                                 consoleLog("Loading stub expectations from ${implicitDataDir.path}".prependIndent("  "))
                                 logIgnoredFiles(implicitDataDir)
 
-                                val stubDataFiles = filesInDir(implicitDataDir)?.toList()?.filter { it.extension == "json" }.orEmpty()
+                                val stubDataFiles = filesInDir(implicitDataDir)?.toList()?.filter { it.extension == "json" }.orEmpty().sorted()
                                 printDataFiles(stubDataFiles)
 
                                 stubDataFiles.map {
-                                    Pair(it.path, stringToMockScenario(StringValue(it.readText())))
-                                }
+                                    try {
+                                        Pair(it.path, stringToMockScenario(StringValue(it.readText())))
+                                    } catch(e: Throwable) {
+                                        logger.log(e, "    Could not load stub file ${it.canonicalPath}")
+                                        null
+                                    }
+                                }.filterNotNull()
                             }
                         }
                         else -> emptyList()
@@ -92,7 +97,7 @@ fun loadContractStubsFromImplicitPaths(contractPaths: List<String>): List<Pair<F
 
                     loadContractStubs(listOf(Pair(contractPath.path, feature)), stubData)
                 } catch(e: Throwable) {
-                    logger.log(e, "Could not load ${contractPath.canonicalPath}")
+                    logger.log(e, "    Could not load ${contractPath.canonicalPath}")
                     emptyList()
                 }
             }
@@ -119,7 +124,7 @@ fun loadContractStubsFromFiles(contractPaths: List<String>, dataDirPaths: List<S
     consoleLog(StringLog("Loading the following contracts:${System.lineSeparator()}$contactPathsString"))
     consoleLog(StringLog(""))
 
-    val dataDirFileList = allDirsInTree(dataDirPaths)
+    val dataDirFileList = allDirsInTree(dataDirPaths).sorted()
 
     val features = contractPaths.map { path ->
         Pair(path, parseContractFileToFeature(path, CommandHook(HookName.stub_load_contract)))
@@ -129,10 +134,17 @@ fun loadContractStubsFromFiles(contractPaths: List<String>, dataDirPaths: List<S
         consoleLog(StringLog("Loading stub expectations from ${it.path}".prependIndent("  ")))
         logIgnoredFiles(it)
         it.listFiles()?.toList() ?: emptyList<File>()
-    }.filter { it.extension == "json" }
+    }.filter { it.extension == "json" }.sorted()
     printDataFiles(dataFiles)
 
-    val mockData = dataFiles.map { Pair(it.path, stringToMockScenario(StringValue(it.readText()))) }
+    val mockData = dataFiles.mapNotNull {
+        try {
+            Pair(it.path, stringToMockScenario(StringValue(it.readText())))
+        } catch (e: Throwable) {
+            logger.log(e, "    Could not load stub file ${it.canonicalPath}")
+            null
+        }
+    }
 
     return loadContractStubs(features, mockData)
 }
@@ -201,7 +213,7 @@ fun stubMatchErrorMessage(
 }
 
 fun loadContractStubs(features: List<Pair<String, Feature>>, stubData: List<Pair<String, ScenarioStub>>): List<Pair<Feature, List<ScenarioStub>>> {
-    val contractInfoFromStubs = stubData.mapNotNull { (stubFile, stub) ->
+    val contractInfoFromStubs: List<Pair<Feature, List<ScenarioStub>>> = stubData.mapNotNull { (stubFile, stub) ->
         val matchResults = features.map { (qontractFile, feature) ->
             try {
                 val kafkaMessage = stub.kafkaMessage
@@ -231,7 +243,7 @@ fun loadContractStubs(features: List<Pair<String, Feature>>, stubData: List<Pair
     val stubbedFeatures = contractInfoFromStubs.map { it.first }
     val missingFeatures = features.map { it.second }.filter { it !in stubbedFeatures }
 
-    return contractInfoFromStubs.plus(missingFeatures.map { Pair(it, emptyList<ScenarioStub>()) })
+    return contractInfoFromStubs.plus(missingFeatures.map { Pair(it, emptyList()) })
 }
 
 fun allDirsInTree(dataDirPath: String): List<File> = allDirsInTree(listOf(dataDirPath))

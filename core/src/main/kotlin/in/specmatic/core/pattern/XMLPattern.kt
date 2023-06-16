@@ -102,6 +102,11 @@ data class XMLPattern(override val pattern: XMLTypeData = XMLTypeData(realName =
         if (sampleData !is XMLNode)
             return Failure("Expected xml, got ${sampleData?.displayableType()}").breadCrumb(pattern.name)
 
+        if(pattern.isNillable()) {
+            if(sampleData.childNodes.isEmpty())
+                return Success()
+        }
+
         val matchingType = if (this.pattern.attributes.containsKey(TYPE_ATTRIBUTE_NAME)) {
             val typeName = this.pattern.getAttributeValue(TYPE_ATTRIBUTE_NAME)
             val xmlType = (resolver.getPattern("($typeName)") as XMLPattern)
@@ -266,7 +271,11 @@ data class XMLPattern(override val pattern: XMLTypeData = XMLTypeData(realName =
         val newAttributes = nonQontractAttributes.mapKeys { entry ->
             withoutOptionality(entry.key)
         }.mapValues { (key, pattern) ->
-            attempt(breadCrumb = "$name.$key") { resolver.generate(key, pattern) }
+            attempt(breadCrumb = "$name.$key") {
+                resolver.withCyclePrevention(pattern) { cyclePreventedResolver ->
+                    cyclePreventedResolver.generate(key, pattern)
+                }
+            }
         }.mapValues {
             StringValue(it.value.toStringLiteral())
         }
@@ -275,13 +284,15 @@ data class XMLPattern(override val pattern: XMLTypeData = XMLTypeData(realName =
             resolvedHop(it, resolver)
         }.map { pattern ->
             attempt(breadCrumb = name) {
-                when {
-                    pattern is ListPattern -> (pattern.generate(resolver) as XMLNode).childNodes
-                    pattern is XMLPattern && pattern.occurMultipleTimes() -> 0.until(randomNumber(RANDOM_NUMBER_CEILING))
-                        .map {
-                            pattern.generate(resolver)
-                        }
-                    else -> listOf(pattern.generate(resolver))
+                resolver.withCyclePrevention(pattern) { cyclePreventedResolver ->
+                    when {
+                        pattern is ListPattern -> (pattern.generate(cyclePreventedResolver) as XMLNode).childNodes
+                        pattern is XMLPattern && pattern.occurMultipleTimes() ->
+                            0.until(randomNumber(RANDOM_NUMBER_CEILING))
+                                .map { pattern.generate(cyclePreventedResolver) }
+
+                        else -> listOf(pattern.generate(cyclePreventedResolver))
+                    }
                 }
             }
         }.flatten().map {
@@ -326,17 +337,23 @@ data class XMLPattern(override val pattern: XMLTypeData = XMLTypeData(realName =
                                 is XMLPattern -> {
                                     val dereferenced: XMLPattern = childPattern.dereferenceType(resolver)
 
-                                    when {
-                                        dereferenced.occurMultipleTimes() -> {
-                                            dereferenced.newBasedOn(row, resolver)
+                                    resolver.withCyclePrevention(dereferenced) { cyclePreventedResolver ->
+                                        when {
+                                            dereferenced.occurMultipleTimes() -> {
+                                                dereferenced.newBasedOn(row, cyclePreventedResolver)
+                                            }
+
+                                            dereferenced.isOptional() -> {
+                                                dereferenced.newBasedOn(row, cyclePreventedResolver).plus(null)
+                                            }
+
+                                            else -> dereferenced.newBasedOn(row, cyclePreventedResolver)
                                         }
-                                        dereferenced.isOptional() -> {
-                                            dereferenced.newBasedOn(row, resolver).plus(null)
-                                        }
-                                        else -> dereferenced.newBasedOn(row, resolver)
                                     }
                                 }
-                                else -> childPattern.newBasedOn(row, resolver)
+                                else -> resolver.withCyclePrevention(childPattern) { cyclePreventedResolver ->
+                                    childPattern.newBasedOn(row, cyclePreventedResolver)
+                                }
                             }
                         }
                     })
@@ -363,17 +380,23 @@ data class XMLPattern(override val pattern: XMLTypeData = XMLTypeData(realName =
                         is XMLPattern -> {
                             val dereferenced: XMLPattern = childPattern.dereferenceType(resolver)
 
-                            when {
-                                dereferenced.occurMultipleTimes() -> {
-                                    dereferenced.newBasedOn(resolver)
+                            resolver.withCyclePrevention(dereferenced) { cyclePreventedResolver ->
+                                when {
+                                    dereferenced.occurMultipleTimes() -> {
+                                        dereferenced.newBasedOn(cyclePreventedResolver)
+                                    }
+
+                                    dereferenced.isOptional() -> {
+                                        dereferenced.newBasedOn(cyclePreventedResolver).plus(null)
+                                    }
+
+                                    else -> dereferenced.newBasedOn(cyclePreventedResolver)
                                 }
-                                dereferenced.isOptional() -> {
-                                    dereferenced.newBasedOn(resolver).plus(null)
-                                }
-                                else -> dereferenced.newBasedOn(resolver)
                             }
                         }
-                        else -> childPattern.newBasedOn(resolver)
+                        else -> resolver.withCyclePrevention(childPattern) { cyclePreventedResolver ->
+                            childPattern.newBasedOn(cyclePreventedResolver)
+                        }
                     }
                 }
             })

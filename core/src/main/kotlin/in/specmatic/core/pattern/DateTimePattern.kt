@@ -7,7 +7,6 @@ import `in`.specmatic.core.value.StringValue
 import `in`.specmatic.core.value.Value
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import javax.validation.constraints.Null
 
 object DateTimePattern : Pattern, ScalarType {
     override fun matches(sampleData: Value?, resolver: Resolver): Result = when (sampleData) {
@@ -18,7 +17,7 @@ object DateTimePattern : Pattern, ScalarType {
         else -> Result.Failure("DateTime types can only be represented using strings")
     }
 
-    override fun generate(resolver: Resolver): StringValue = currentDate()
+    override fun generate(resolver: Resolver): StringValue = currentDateTime()
 
     override fun newBasedOn(row: Row, resolver: Resolver): List<DateTimePattern> = listOf(this)
 
@@ -47,6 +46,8 @@ object DateTimePattern : Pattern, ScalarType {
     override val typeName: String = "datetime"
 
     override val pattern = "(datetime)"
+
+    override fun toString() = pattern
 }
 
-fun currentDate() = StringValue(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME))
+private fun currentDateTime() = StringValue(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME))

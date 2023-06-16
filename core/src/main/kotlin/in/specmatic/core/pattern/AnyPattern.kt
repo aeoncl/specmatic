@@ -5,6 +5,7 @@ import `in`.specmatic.core.Resolver
 import `in`.specmatic.core.Result
 import `in`.specmatic.core.mismatchResult
 import `in`.specmatic.core.value.EmptyString
+import `in`.specmatic.core.value.NullValue
 import `in`.specmatic.core.value.ScalarValue
 import `in`.specmatic.core.value.Value
 
@@ -17,17 +18,39 @@ data class AnyPattern(
 
     override fun hashCode(): Int = pattern.hashCode()
 
-    override fun matches(sampleData: Value?, resolver: Resolver): Result =
-        pattern.asSequence().map {
-            resolver.matchesPattern(key, it, sampleData ?: EmptyString)
-        }.let { results ->
-            results.find { it is Result.Success } ?: failedToFindAny2(
-                typeName,
-                sampleData,
-                getResult(results.map { it as Result.Failure }.toList()),
-                resolver.mismatchMessages
-            )
+    data class AnyPatternMatch(val pattern: Pattern, val result: Result)
+
+    override fun matches(sampleData: Value?, resolver: Resolver): Result {
+        val matchResults = pattern.map {
+            AnyPatternMatch(it, resolver.matchesPattern(key, it, sampleData ?: EmptyString))
         }
+
+        val matchResult = matchResults.find { it.result is Result.Success }
+
+        if(matchResult != null)
+            return matchResult.result
+
+        val resolvedPatterns = pattern.map { resolvedHop(it, resolver) }
+
+        if(resolvedPatterns.any { it is NullPattern } || resolvedPatterns.all { it is ExactValuePattern })
+            return failedToFindAny(
+                    typeName,
+                    sampleData,
+                    getResult(matchResults.map { it.result as Result.Failure }),
+                    resolver.mismatchMessages
+                )
+
+        val failuresWithUpdatedBreadcrumbs = matchResults.map {
+            Pair(it.pattern, it.result as Result.Failure)
+        }.map { (pattern, failure) ->
+            pattern.typeAlias?.let {
+                failure.breadCrumb("(~~~${withoutPatternDelimiters(it)} object)")
+            } ?:
+            failure
+        }
+
+        return Result.fromFailures(failuresWithUpdatedBreadcrumbs)
+    }
 
     private fun getResult(failures: List<Result.Failure>): List<Result.Failure> = when {
         isNullablePattern() -> {
@@ -41,22 +64,58 @@ data class AnyPattern(
 
     private fun isEmpty(it: Pattern) = it.typeAlias == "(empty)" || it is NullPattern
 
-    override fun generate(resolver: Resolver): Value =
-        when (key) {
-            null -> pattern.random().generate(resolver)
-            else -> resolver.generate(key, pattern.random())
+    override fun generate(resolver: Resolver): Value {
+        val randomPattern = pattern.random()
+        val isNullable = pattern.any {it is NullPattern}
+        return resolver.withCyclePrevention(randomPattern, isNullable) { cyclePreventedResolver ->
+            when (key) {
+                null -> randomPattern.generate(cyclePreventedResolver)
+                else -> cyclePreventedResolver.generate(key, randomPattern)
+            }
+        }?: NullValue // Terminates cycle gracefully. Only happens if isNullable=true so that it is contract-valid.
+    }
+
+    override fun newBasedOn(row: Row, resolver: Resolver): List<Pattern> {
+        val isNullable = pattern.any {it is NullPattern}
+        return pattern.flatMap { innerPattern ->
+            resolver.withCyclePrevention(innerPattern, isNullable) { cyclePreventedResolver ->
+                innerPattern.newBasedOn(row, cyclePreventedResolver)
+            }?: listOf()  // Terminates cycle gracefully. Only happens if isNullable=true so that it is contract-valid.
+        }
+    }
+
+    override fun newBasedOn(resolver: Resolver): List<Pattern> {
+        val isNullable = pattern.any {it is NullPattern}
+        return pattern.flatMap { innerPattern ->
+            resolver.withCyclePrevention(innerPattern, isNullable) { cyclePreventedResolver ->
+                innerPattern.newBasedOn(cyclePreventedResolver)
+            }?: listOf()  // Terminates cycle gracefully. Only happens if isNullable=true so that it is contract-valid.
+        }
+    }
+
+    override fun negativeBasedOn(row: Row, resolver: Resolver): List<Pattern> {
+        val nullable = pattern.any { it is NullPattern }
+
+        val negativeTypes = pattern.flatMap {
+            it.negativeBasedOn(row, resolver)
+        }.let {
+            if (nullable)
+                it.filterNot { it is NullPattern }
+            else
+                it
         }
 
-    override fun newBasedOn(row: Row, resolver: Resolver): List<Pattern> =
-        pattern.flatMap { it.newBasedOn(row, resolver) }
+        return if(negativeTypes.all { it is ScalarType })
+            negativeTypes.distinct()
+        else
+            negativeTypes
+    }
 
-    override fun newBasedOn(resolver: Resolver): List<Pattern> =
-        pattern.flatMap { it.newBasedOn(resolver) }
+    override fun parse(value: String, resolver: Resolver): Value {
+        val resolvedTypes = pattern.map { resolvedHop(it, resolver) }
+        val nonNullTypesFirst = resolvedTypes.filterNot { it is NullPattern }.plus(resolvedTypes.filterIsInstance<NullPattern>())
 
-    override fun negativeBasedOn(row: Row, resolver: Resolver): List<Pattern> = listOf(NullPattern)
-
-    override fun parse(value: String, resolver: Resolver): Value =
-        pattern.asSequence().map {
+        return nonNullTypesFirst.asSequence().map {
             try {
                 it.parse(value, resolver)
             } catch (e: Throwable) {
@@ -69,6 +128,7 @@ data class AnyPattern(
                 ) { it.typeName }
             }."
         )
+    }
 
     override fun patternSet(resolver: Resolver): List<Pattern> =
         this.pattern.flatMap { it.patternSet(resolver) }
@@ -108,16 +168,7 @@ data class AnyPattern(
         }
 }
 
-private fun failedToFindAny(description: String, results: List<Result.Failure>): Result.Failure =
-    when (results.size) {
-        1 -> results[0]
-        else -> {
-            val actual = results.first().message.replace(Regex("Expected.*actual was "), "")
-            Result.Failure("""Expected $description, Actual was $actual""".trim())
-        }
-    }
-
-private fun failedToFindAny2(expected: String, actual: Value?, results: List<Result.Failure>, mismatchMessages: MismatchMessages): Result.Failure =
+private fun failedToFindAny(expected: String, actual: Value?, results: List<Result.Failure>, mismatchMessages: MismatchMessages): Result.Failure =
     when (results.size) {
         1 -> results[0]
         else -> {

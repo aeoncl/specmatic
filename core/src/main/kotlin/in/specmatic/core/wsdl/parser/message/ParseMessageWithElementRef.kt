@@ -13,9 +13,9 @@ data class ParseMessageWithElementRef(private val wsdl: WSDL, private val fullyQ
     override fun execute(): MessageTypeInfoParser {
         val topLevelElement = wsdl.getSOAPElement(fullyQualifiedName)
 
-        val qontractTypeName = "${operationName.replace(":", "_")}${soapMessageType.messageTypeName.capitalizeFirstChar()}"
+        val qontractTypeName = "${operationName.replace(":", "_")}_SOAPPayload_${soapMessageType.messageTypeName.capitalizeFirstChar()}"
 
-        val typeInfo = topLevelElement.getGherkinTypes(qontractTypeName, existingTypes, emptySet())
+        val typeInfo = topLevelElement.deriveSpecmaticTypes(qontractTypeName, existingTypes, emptySet())
 
         val namespaces: Map<String, String> = wsdl.getNamespaces(typeInfo)
         val nodeNameForSOAPBody = (typeInfo.nodes.first() as XMLNode).realName
@@ -26,11 +26,16 @@ data class ParseMessageWithElementRef(private val wsdl: WSDL, private val fullyQ
     }
 }
 
-fun getQontractAttributes(element: XMLNode): Map<String, StringValue> {
+fun deriveSpecmaticAttributes(element: XMLNode): Map<String, StringValue> {
     return when {
         elementIsOptional(element) -> mapOf(OCCURS_ATTRIBUTE_NAME to StringValue(OPTIONAL_ATTRIBUTE_VALUE))
         multipleElementsCanExist(element) -> mapOf(OCCURS_ATTRIBUTE_NAME to StringValue(MULTIPLE_ATTRIBUTE_VALUE))
         else -> emptyMap()
+    }.let {
+        if(element.attributes["nillable"]?.toStringLiteral()?.lowercase() == "true")
+            it.plus(NILLABLE_ATTRIBUTE_NAME to StringValue("true"))
+        else
+            it
     }
 }
 
@@ -80,6 +85,7 @@ internal const val primitiveNamespace = "http://www.w3.org/2001/XMLSchema"
 
 const val OCCURS_ATTRIBUTE_NAME = "specmatic_occurs"
 const val OCCURS_ATTRIBUTE_NAME_LEGACY = "qontract_occurs"
+const val NILLABLE_ATTRIBUTE_NAME = "specmatic_nillable"
 
 const val OPTIONAL_ATTRIBUTE_VALUE = "optional"
 const val MULTIPLE_ATTRIBUTE_VALUE = "multiple"

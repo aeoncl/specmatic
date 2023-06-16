@@ -1893,6 +1893,247 @@ paths:
         assertThat(reportText).doesNotContain("API: POST /data2 -> 200")
         assertThat(reportText).contains("API: POST /data3 -> 200")
     }
+
+    @Test
+    fun `backward compatibility check going from nullable to non-nullable`() {
+        val oldContract = OpenApiSpecification.fromYAML(
+            """
+openapi: 3.0.0
+info:
+  title: Sample API
+  version: 0.1.9
+paths:
+  /data:
+    post:
+      summary: hello world
+      description: test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+              properties:
+                data:
+                  oneOf:
+                    - nullable: true
+                    - type: number
+      responses:
+        '200':
+          description: Says hello
+          content:
+            text/plain:
+              schema:
+                type: string
+""".trimIndent(), ""
+        ).toFeature()
+
+        val newContract = OpenApiSpecification.fromYAML(
+            """
+openapi: 3.0.0
+info:
+  title: Sample API
+  version: 0.1.9
+paths:
+  /data:
+    post:
+      summary: hello world
+      description: test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+              properties:
+                data:
+                  type: number
+      responses:
+        '200':
+          description: Says hello
+          content:
+            text/plain:
+              schema:
+                type: string
+""".trimIndent(), ""
+        ).toFeature()
+
+        val result = testBackwardCompatibility(oldContract, newContract)
+        assertThat(result.success()).isFalse()
+    }
+
+    @Test
+    fun `backward compatibility check going from oneOf number to number`() {
+        val oldContract = OpenApiSpecification.fromYAML(
+            """
+openapi: 3.0.0
+info:
+  title: Sample API
+  version: 0.1.9
+paths:
+  /data:
+    post:
+      summary: hello world
+      description: test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+              properties:
+                data:
+                  oneOf:
+                    - type: number
+      responses:
+        '200':
+          description: Says hello
+          content:
+            text/plain:
+              schema:
+                type: string
+""".trimIndent(), ""
+        ).toFeature()
+
+        val newContract = OpenApiSpecification.fromYAML(
+            """
+openapi: 3.0.0
+info:
+  title: Sample API
+  version: 0.1.9
+paths:
+  /data:
+    post:
+      summary: hello world
+      description: test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+              properties:
+                data:
+                  type: number
+      responses:
+        '200':
+          description: Says hello
+          content:
+            text/plain:
+              schema:
+                type: string
+""".trimIndent(), ""
+        ).toFeature()
+
+        val result = testBackwardCompatibility(oldContract, newContract)
+        assertThat(result.success()).isTrue()
+    }
+
+    @Test
+    fun `backward compatibility check going null number string to number string`() {
+        val oldContract = OpenApiSpecification.fromYAML(
+            """
+openapi: 3.0.0
+info:
+  title: Sample API
+  version: 0.1.9
+paths:
+  /data:
+    post:
+      summary: hello world
+      description: test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+              properties:
+                data:
+                  oneOf:
+                    - nullable: true
+                    - type: number
+                    - type: string
+      responses:
+        '200':
+          description: Says hello
+          content:
+            text/plain:
+              schema:
+                type: string
+""".trimIndent(), ""
+        ).toFeature()
+
+        val newContract = OpenApiSpecification.fromYAML(
+            """
+openapi: 3.0.0
+info:
+  title: Sample API
+  version: 0.1.9
+paths:
+  /data:
+    post:
+      summary: hello world
+      description: test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+              properties:
+                data:
+                  oneOf:
+                    - type: number
+                    - type: string
+      responses:
+        '200':
+          description: Says hello
+          content:
+            text/plain:
+              schema:
+                type: string
+""".trimIndent(), ""
+        ).toFeature()
+
+        val result = testBackwardCompatibility(oldContract, newContract)
+        assertThat(result.success()).isFalse()
+    }
+
+    @Test
+    fun `removing a key in the request should be backward compatible`() {
+        val older = parseGherkinStringToFeature("""
+            Feature: test
+              Scenario: test
+                When POST /data
+                And request-body
+                | id | (number) |
+                | name | (string) |
+                Then status 200
+        """.trimIndent())
+
+        val newer = parseGherkinStringToFeature("""
+            Feature: test
+              Scenario: test
+                When POST /data
+                And request-body
+                | id | (number) |
+                Then status 200
+        """.trimIndent())
+
+        val result = testBackwardCompatibility(older, newer)
+        val reportText = result.report().also { println(it) }
+
+        println(reportText)
+        assertThat(result.success()).isTrue
+    }
+
 }
 
 private fun String.openAPIToContract(): Feature {

@@ -12,6 +12,7 @@ import org.springframework.context.ApplicationContext
 import picocli.CommandLine.*
 import java.util.concurrent.Callable
 
+
 @Command(name = "stub",
         mixinStandardHelpOptions = true,
         description = ["Start a stub server with contract"])
@@ -85,8 +86,11 @@ class StubCommand : Callable<Unit> {
     @Option(names = ["--textLog"], description = ["Directory in which to write a text log"])
     var textLog: String? = null
 
-    @Option(names = ["--jsonLog"], description = ["Directory in which to write a json log"])
+    @Option(names = ["--jsonLog"], description = ["Directory in which to write a JSON log"])
     var jsonLog: String? = null
+
+    @Option(names = ["--jsonConsoleLog"], description = ["Console log should be in JSON format"])
+    var jsonConsoleLog: Boolean = false
 
     @Option(names = ["--noConsoleLog"], description = ["Don't log to console"])
     var noConsoleLog: Boolean = false
@@ -104,21 +108,7 @@ class StubCommand : Callable<Unit> {
     val httpClientFactory = HttpClientFactory()
 
     override fun call() {
-        val logPrinters = mutableListOf<LogPrinter>()
-
-        if(!noConsoleLog) {
-            logPrinters.add(ConsolePrinter)
-        }
-
-        textLog?.let {
-            logPrinters.add(TextFilePrinter(LogDirectory(it, logPrefix, "", "log")))
-            logger.printer.printers.add(TextFilePrinter(LogDirectory(it, logPrefix, "", "log")))
-        }
-
-        jsonLog?.let {
-            logPrinters.add(JSONFilePrinter(LogDirectory(it, logPrefix, "json", "log")))
-            logger.printer.printers.add(JSONFilePrinter(LogDirectory(it, logPrefix, "json", "log")))
-        }
+        val logPrinters = configureLogPrinters()
 
         logger = if(verbose)
             Verbose(CompositePrinter(logPrinters))
@@ -147,6 +137,32 @@ class StubCommand : Callable<Unit> {
         }
     }
 
+    private fun configureLogPrinters(): List<LogPrinter> {
+        val consoleLogPrinter = configureConsoleLogPrinter()
+        val textLogPrinter = configureTextLogPrinter()
+        val jsonLogPrinter = configureJSONLogPrinter()
+
+        return consoleLogPrinter.plus(textLogPrinter).plus(jsonLogPrinter)
+    }
+
+    private fun configureConsoleLogPrinter(): List<LogPrinter> {
+        if (noConsoleLog)
+            return emptyList()
+
+        if (jsonConsoleLog)
+            return listOf(JSONConsoleLogPrinter)
+
+        return listOf(ConsolePrinter)
+    }
+
+    private fun configureJSONLogPrinter(): List<LogPrinter> = jsonLog?.let {
+        listOf(JSONFilePrinter(LogDirectory(it, logPrefix, "json", "log")))
+    } ?: emptyList()
+
+    private fun configureTextLogPrinter(): List<LogPrinter> = textLog?.let {
+        listOf(TextFilePrinter(LogDirectory(it, logPrefix, "", "log")))
+    } ?: emptyList()
+
     private fun loadConfig() = contractPaths.ifEmpty {
         logger.debug("No contractPaths specified. Using configuration file named $configFileName")
         specmaticConfig.contractStubPaths()
@@ -158,10 +174,18 @@ class StubCommand : Callable<Unit> {
 
         val certInfo = CertInfo(keyStoreFile, keyStoreDir, keyStorePassword, keyStoreAlias, keyPassword)
 
+        port = when (isDefaultPort(port)) {
+            true -> if (portIsInUse(host, port)) findRandomFreePort() else port
+            false -> port
+        }
         httpStub = httpStubEngine.runHTTPStub(stubData, host, port, certInfo, strictMode, passThroughTargetBase, httpClientFactory, workingDirectory)
         kafkaStub = kafkaStubEngine.runKafkaStub(stubData, kafkaHost, kafkaPort.toInt(), startKafka)
 
         LogTail.storeSnapshot()
+    }
+
+    private fun isDefaultPort(port:Int): Boolean {
+        return DEFAULT_HTTP_STUB_PORT == port.toString()
     }
 
     private fun restartServer() {

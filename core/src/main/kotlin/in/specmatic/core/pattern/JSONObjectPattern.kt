@@ -7,6 +7,7 @@ import `in`.specmatic.core.utilities.withNullPattern
 import `in`.specmatic.core.value.JSONArrayValue
 import `in`.specmatic.core.value.JSONObjectValue
 import `in`.specmatic.core.value.Value
+import java.util.Optional
 
 fun toJSONObjectPattern(jsonContent: String, typeAlias: String?): JSONObjectPattern = toJSONObjectPattern(stringToPatternMap(jsonContent), typeAlias)
 
@@ -37,12 +38,24 @@ data class JSONObjectPattern(override val pattern: Map<String, Pattern> = emptyM
         }
     }
 
+    override fun generateWithAll(resolver: Resolver): Value {
+        return attempt(breadCrumb = "HEADERS") {
+            JSONObjectValue(pattern.filterNot { it.key == "..." }.mapKeys {
+                attempt(breadCrumb = it.key) {
+                    withoutOptionality(it.key)
+                }
+            }.mapValues {
+                it.value.generateWithAll(resolver)
+            })
+        }
+    }
+
     override fun listOf(valueList: List<Value>, resolver: Resolver): Value {
         return JSONArrayValue(valueList)
     }
 
     override fun matches(sampleData: Value?, resolver: Resolver): Result {
-        val resolverWithNullType = withNullPattern(resolver).withUnexpectedKeyCheck(unexpectedKeyCheck)
+        val resolverWithNullType = withNullPattern(resolver)
         if (sampleData !is JSONObjectValue)
             return mismatchResult("JSON object", sampleData, resolver.mismatchMessages)
 
@@ -66,7 +79,7 @@ data class JSONObjectPattern(override val pattern: Map<String, Pattern> = emptyM
         JSONObjectValue(generate(pattern, withNullPattern(resolver)))
 
     override fun newBasedOn(row: Row, resolver: Resolver): List<JSONObjectPattern> =
-        allOrNothingCombinationIn(pattern.minus("...")) { pattern ->
+        allOrNothingCombinationIn(pattern.minus("..."), if(resolver.generativeTestingEnabled) Row() else row) { pattern ->
             newBasedOn(pattern, row, withNullPattern(resolver))
         }.map { toJSONObjectPattern(it.mapKeys { (key, _) ->
             withoutOptionality(key)
@@ -90,9 +103,21 @@ data class JSONObjectPattern(override val pattern: Map<String, Pattern> = emptyM
 
 fun generate(jsonPattern: Map<String, Pattern>, resolver: Resolver): Map<String, Value> {
     val resolverWithNullType = withNullPattern(resolver)
-    return jsonPattern.mapKeys { entry -> withoutOptionality(entry.key) }.mapValues { (key, pattern) ->
-        attempt(breadCrumb = key) { resolverWithNullType.generate(key, pattern) }
-    }
+
+    val optionalProps = jsonPattern.keys.filter { isOptional(it) }.map { withoutOptionality(it) }
+
+    return jsonPattern
+        .mapKeys { entry -> withoutOptionality(entry.key) }
+        .mapValues { (key, pattern) ->
+            attempt(breadCrumb = key) {
+                // Handle cycle (represented by null value) by marking this property as removable
+                Optional.ofNullable(resolverWithNullType.withCyclePrevention(pattern, optionalProps.contains(key)) {
+                    it.generate(key, pattern)
+                })
+            }
+        }
+        .filterValues { it.isPresent }
+        .mapValues { (key, opt) -> opt.get()}
 }
 
 internal fun mapEncompassesMap(pattern: Map<String, Pattern>, otherPattern: Map<String, Pattern>, thisResolverWithNullType: Resolver, otherResolverWithNullType: Resolver, typeStack: TypeStack = emptySet()): Result {

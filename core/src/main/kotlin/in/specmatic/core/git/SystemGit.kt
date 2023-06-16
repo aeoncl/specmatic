@@ -57,6 +57,14 @@ class SystemGit(override val workingDirectory: String = ".", private val prefix:
         }
     }
 
+    override fun getCurrentBranch(): String {
+        return execute(Configuration.gitCommand, "git", "diff", "--name-only", "master")
+    }
+
+    override fun statusPorcelain(): String {
+        return execute(Configuration.gitCommand, "status", "--porcelain")
+    }
+
 
     override fun shallowClone(gitRepositoryURI: String, cloneDirectory: File): SystemGit =
         this.also {
@@ -103,6 +111,9 @@ class SystemGit(override val workingDirectory: String = ".", private val prefix:
     }
 
     override fun inGitRootOf(contractPath: String): GitCommand = SystemGit(File(contractPath).parentFile.absolutePath)
+    fun getChangesFromMainBranch(mainBranch: String): List<String> {
+        return execute(Configuration.gitCommand, "diff", "--name-only", mainBranch).split(System.lineSeparator())
+    }
 }
 
 fun exitErrorMessageContains(exception: NonZeroExitError, snippets: List<String>): Boolean {

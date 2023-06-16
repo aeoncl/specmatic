@@ -181,4 +181,48 @@ internal class AnyPatternTest {
             assertThat(resultText).contains("02")
         }
     }
+
+    @Test
+    fun `parse operation of Nullable type implemented with AnyPattern should return a string`() {
+        val type = AnyPattern(listOf(NullPattern, StringPattern()))
+        val parsedValue = type.parse("22B Baker Street", Resolver(isNegative = true))
+        assertThat(parsedValue.toStringLiteral()).isEqualTo("22B Baker Street")
+    }
+
+    @Test
+    fun `values for negative tests`() {
+        val negativeTypes = AnyPattern(listOf(NullPattern, StringPattern())).negativeBasedOn(Row(), Resolver())
+
+        val expectedTypes = listOf(NumberPattern(), BooleanPattern)
+
+        assertThat(negativeTypes).containsAll(expectedTypes)
+        assertThat(negativeTypes).hasSize(expectedTypes.size)
+    }
+
+    @Test
+    fun `we should get deep errors errors with breadcrumbs for each possible type in a oneOf list`() {
+        val customerType = JSONObjectPattern(mapOf("name" to StringPattern()), typeAlias = "(Customer)")
+        val employeeType = JSONObjectPattern(mapOf("name" to StringPattern(), "manager" to StringPattern()), typeAlias = "(Employee)")
+        val oneOfCustomerOrEmployeeType = AnyPattern(listOf(customerType, employeeType))
+
+        val personType = JSONObjectPattern(mapOf("personInfo" to oneOfCustomerOrEmployeeType))
+
+        val personData = parsedJSONObject("""{ "personInfo": { "name": "Sherlock Holmes", "salutation": "Mr" } }""")
+
+        val personMatchResult = personType.matches(personData, Resolver()).reportString()
+
+        assertThat(personMatchResult).contains("""
+            >> personInfo (when Customer object).salutation
+            
+               Key named "salutation" was unexpected
+            
+            >> personInfo (when Employee object).manager
+            
+               Expected key named "manager" was missing
+            
+            >> personInfo (when Employee object).salutation
+            
+               Key named "salutation" was unexpected
+       """.trimIndent())
+    }
 }

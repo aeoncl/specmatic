@@ -70,6 +70,17 @@ paths:
             enum:
               - labrador
               - retriever
+        - name: rating
+          in: query
+          description: ratings to filter by
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - 1
+                - 2
         - in: header
           name: X-Request-ID
           schema:
@@ -210,6 +221,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+    patch:
+      summary: update a pet
+      description: Updates an existing pet in the store.
+      operationId: updatePet
+      parameters:
+        - name: id
+          in: path
+          description: ID of pet to update
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        description: Pet to update to the store
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pet'
+      responses:
+        '200':
+          description: pet updated response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
 components:
   schemas:
     Pet:
