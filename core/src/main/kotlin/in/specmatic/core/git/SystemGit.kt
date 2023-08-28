@@ -109,7 +109,7 @@ class SystemGit(override val workingDirectory: String = ".", private val prefix:
     override fun relativeGitPath(newerContractPath: String): Pair<SystemGit, String> {
         val gitRoot = File(SystemGit(File(newerContractPath).absoluteFile.parent).gitRoot())
         val git = SystemGit(gitRoot.absolutePath)
-        val relativeContractPath = File(newerContractPath).absoluteFile.relativeTo(gitRoot.absoluteFile).path
+        val relativeContractPath = File(newerContractPath).absoluteFile.relativeTo(gitRoot.absoluteFile).path.replace("\\", "/")
         return Pair(git, relativeContractPath)
     }
 
