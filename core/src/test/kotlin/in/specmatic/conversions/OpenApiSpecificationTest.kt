@@ -6534,6 +6534,61 @@ paths:
         }
     }
 
+    @Test
+    fun `support for multipart form data part array with a return type byte array string`() {
+        val openAPI = """
+                openapi: 3.0.3
+                info:
+                  title: Return type of multipart-form-data with string format byte
+                  description: Service to add a test case to a Specmatic feature
+                  version: 1.0.0
+                tags:
+                  - name: UploadFile
+                paths:
+                  "/file":
+                    post:
+                      tags:
+                        - UploadFile
+                      operationId: sendMessage
+                      requestBody:
+                        content:
+                          multipart/form-data:
+                            schema:
+                              type: object
+                              properties:
+                                filesPart:
+                                  type: string
+                                  format: binary
+                              required:
+                                - filesPart
+                      responses:
+                        "200":
+                          description: "Send Message Response"
+                          content:
+                            multipart/form-data:
+                              schema:
+                                type: object
+                                properties:
+                                  filename:
+                                    type: string
+                                    format: byte
+            """.trimIndent()
+
+        val specifications = OpenApiSpecification.fromYAML(openAPI, "").toScenarioInfos()
+        assertTrue(specifications.isNotEmpty())
+        with(OpenApiSpecification.fromYAML(openAPI, "",).toFeature()) {
+            val result =
+                    this.scenarios.first().matchesMock(
+                            HttpRequest(
+                                    "POST",
+                                    "/file",
+                                    multiPartFormData = listOf(MultiPartFileValue("filesPart", "test.pdf", "application/pdf", "UTF-8"))
+                            ), HttpResponse.OK("{\"filename\": \"ThIsi5ByT3sD4tA\"}")
+                    )
+            assertThat(result).isInstanceOf(Result.Success::class.java)
+        }
+    }
+
     private fun ignoreButLogException(function: () -> OpenApiSpecification) {
         try {
             function()
