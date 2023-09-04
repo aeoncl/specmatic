@@ -4,18 +4,23 @@ import `in`.specmatic.core.Result.Failure
 import `in`.specmatic.core.Result.Success
 import `in`.specmatic.core.pattern.*
 import `in`.specmatic.core.value.StringValue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
 sealed class MultiPartFormDataPattern(open val name: String, open val contentType: String?) {
     abstract fun newBasedOn(row: Row, resolver: Resolver): List<MultiPartFormDataPattern?>
-    abstract fun generate(resolver: Resolver): MultiPartFormDataValue
+    abstract fun generate(resolver: Resolver): List<MultiPartFormDataValue>
     abstract fun matches(value: MultiPartFormDataValue, resolver: Resolver): Result
     abstract fun nonOptional(): MultiPartFormDataPattern
+    abstract fun getRowKey(): String
 }
 
 data class MultiPartContentPattern(override val name: String, val content: Pattern, override val contentType: String? = null) : MultiPartFormDataPattern(name, contentType) {
     override fun newBasedOn(row: Row, resolver: Resolver): List<MultiPartContentPattern?> =
-            newBasedOn(row, withoutOptionality(name), content, resolver).map { newContent: Pattern -> MultiPartContentPattern(
+            newBasedOn(row, getRowKey(), content, resolver).map { newContent: Pattern -> MultiPartContentPattern(
                 withoutOptionality(name),
                 newContent,
                 contentType
@@ -26,8 +31,8 @@ data class MultiPartContentPattern(override val name: String, val content: Patte
                 }
             }
 
-    override fun generate(resolver: Resolver): MultiPartFormDataValue =
-            MultiPartContentValue(name, resolver.withCyclePrevention(content, content::generate), specifiedContentType = contentType)
+    override fun generate(resolver: Resolver): List<MultiPartFormDataValue> =
+            listOf(MultiPartContentValue(name, resolver.withCyclePrevention(content, content::generate), specifiedContentType = contentType))
 
     override fun matches(value: MultiPartFormDataValue, resolver: Resolver): Result {
         if(withoutOptionality(name) != value.name)
@@ -67,16 +72,18 @@ data class MultiPartContentPattern(override val name: String, val content: Patte
     override fun nonOptional(): MultiPartFormDataPattern {
         return copy(name = withoutOptionality(name))
     }
+    override fun getRowKey(): String = withoutOptionality(name)
+
 }
 
 data class MultiPartFilePattern(override val name: String, val filename: Pattern, override val contentType: String? = null, val contentEncoding: String? = null) : MultiPartFormDataPattern(name, contentType) {
     override fun newBasedOn(row: Row, resolver: Resolver): List<MultiPartFormDataPattern?> {
-        val rowKey = "${name}_filename"
+        val rowKey = getRowKey()
         return listOf(this.copy(filename = if(row.containsField(rowKey)) ExactValuePattern(StringValue(row.getField(rowKey))) else filename))
     }
 
-    override fun generate(resolver: Resolver): MultiPartFormDataValue =
-            MultiPartFileValue(name, resolver.withCyclePrevention(filename, filename::generate).toStringLiteral(), contentType ?: "", contentEncoding)
+    override fun generate(resolver: Resolver): List<MultiPartFormDataValue> =
+            listOf(MultiPartFileValue(name, resolver.withCyclePrevention(filename, filename::generate).toStringLiteral(), contentType ?: "", contentEncoding))
 
     override fun matches(value: MultiPartFormDataValue, resolver: Resolver): Result {
         return when {
@@ -137,4 +144,74 @@ data class MultiPartFilePattern(override val name: String, val filename: Pattern
     override fun nonOptional(): MultiPartFormDataPattern {
         return copy(name = withoutOptionality(name))
     }
+
+    override fun getRowKey(): String = "${name}_filename"
 }
+
+data class MultipartArrayPattern(override val name: String, val content: Pattern) : MultiPartFormDataPattern(name, "array") {
+    private var _patternsToGenerate: List<MultiPartFormDataPattern?> = emptyList()
+    private fun setPatternsToGenerate(patternsToGenerate: List<MultiPartFormDataPattern?>) {
+        _patternsToGenerate = patternsToGenerate
+    }
+    override fun newBasedOn(row: Row, resolver: Resolver): List<MultiPartFormDataPattern?> {
+        val multipartPattern = getArrayContentMultipartPattern()
+        val rowKey = getRowKey()
+        val rows = try { when(val jsonElem = Json.parseToJsonElement(row.getField(rowKey))) {
+                    is JsonArray -> {
+                        jsonElem.map { value ->
+                            val values = row.values.toMutableList()
+                            values[row.columnNames.indexOf(rowKey)] = value.jsonPrimitive.content
+                            row.copy(values=values)
+                        }
+                    }
+                    is JsonPrimitive -> {
+                        listOf(row)
+                    }
+                    else -> {
+                        emptyList<Row>()
+                    }
+        }} catch (exception: NoSuchElementException) {
+            //Generate a part when row is empty
+            listOf(row)
+        }
+
+        val out = copy(name=name, content=content)
+        out.setPatternsToGenerate(rows.map {multipartPattern.newBasedOn(it, resolver) }.flatten())
+        return listOf(out)
+    }
+
+    override fun generate(resolver: Resolver): List<MultiPartFormDataValue> {
+      return this._patternsToGenerate.mapNotNull { it?.generate(resolver) }.flatten()
+    }
+
+    override fun matches(value: MultiPartFormDataValue, resolver: Resolver): Result {
+        if(withoutOptionality(name) != value.name)
+            return Failure("The contract expected a part name to be $name, but got ${value.name}", failureReason = FailureReason.PartNameMisMatch)
+        val multipartPattern = getArrayContentMultipartPattern()
+        return multipartPattern.matches(value, resolver)
+    }
+
+    private fun getArrayContentMultipartPattern() : MultiPartFormDataPattern {
+        if (content.pattern !is Pattern){
+            throw Exception("The multipart array item type wasn't parsed correctly, content.pattern was of type: ${content.pattern.javaClass.canonicalName} instead of Pattern")
+        }
+        val itemPattern = content.pattern as Pattern
+
+        return if (itemPattern is BinaryPattern) {
+            MultiPartFilePattern(name, itemPattern)
+        } else {
+            MultiPartContentPattern(name, itemPattern)
+        }
+    }
+
+    override fun nonOptional(): MultiPartFormDataPattern {
+        return copy(name = withoutOptionality(name))
+    }
+
+    override fun getRowKey(): String {
+        val multipartPattern = getArrayContentMultipartPattern()
+        return multipartPattern.getRowKey();
+    }
+
+}
+

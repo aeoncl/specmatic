@@ -279,8 +279,15 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
                                 requestExamples.values.toList().map { value: Any? -> value?.toString() ?: "" }
                                     .map { valueString: String ->
                                         if (valueString.contains("externalValue")) {
-                                            ObjectMapper().readValue(valueString, Map::class.java).values.first()
-                                                .toString()
+                                            val first = ObjectMapper().readValue(valueString, Map::class.java).values.first()
+                                            if(first is List<*>) {
+                                                when(first.size){
+                                                    in 2..Int.MAX_VALUE-> ObjectMapper().writeValueAsString(first)
+                                                    else -> first.toString()
+                                                }
+                                            }else{
+                                                first as String
+                                            }
                                         } else valueString
                                     },
                                 name = exampleName)
@@ -479,18 +486,27 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
                                     else
                                         "$partName?"
 
-                                    if (partSchema is BinarySchema) {
-                                        MultiPartFilePattern(
-                                            partNameWithPresence,
-                                            toSpecmaticPattern(partSchema, emptyList()),
-                                            partContentType
-                                        )
-                                    } else {
-                                        MultiPartContentPattern(
-                                            partNameWithPresence,
-                                            toSpecmaticPattern(partSchema, emptyList()),
-                                            partContentType
-                                        )
+                                    when(partSchema){
+                                        is ArraySchema -> {
+                                            MultipartArrayPattern(
+                                                    partNameWithPresence,
+                                                    toSpecmaticPattern(partSchema, emptyList()),
+                                            )
+                                        }
+                                        is BinarySchema -> {
+                                            MultiPartFilePattern(
+                                                partNameWithPresence,
+                                                toSpecmaticPattern(partSchema, emptyList()),
+                                                partContentType
+                                            )
+                                        }
+                                        else -> {
+                                            MultiPartContentPattern(
+                                                    partNameWithPresence,
+                                                    toSpecmaticPattern(partSchema, emptyList()),
+                                                    partContentType
+                                            )
+                                        }
                                     }
                                 }
 
@@ -593,7 +609,6 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
                 if (schema.xml?.name != null) {
                     toXMLPattern(schema, typeStack = typeStack)
                 } else {
-
                     ListPattern(toSpecmaticPattern(schema.items, typeStack))
                 }
             }
