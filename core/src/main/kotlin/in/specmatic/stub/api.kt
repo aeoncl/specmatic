@@ -61,6 +61,27 @@ fun createStubFromContracts(contractPaths: List<String>, dataDirPaths: List<Stri
     return HttpStub(features, httpExpectations, host, port, ::consoleLog)
 }
 
+fun createStubFromFeature(feature: Feature): List<ScenarioStub> {
+
+    val out: List<ScenarioStub>  = feature.scenarios.flatMap { scenario ->
+        if (scenario.isA2xxScenario()) {
+            scenario.examples.flatMapIndexed { i, requestExample ->
+                val responseExample = scenario.responseExamples[i]
+
+                requestExample.rows.mapIndexed { rowIndex, requestExampleRow ->
+                    val responseExampleRow = responseExample.rows[rowIndex]
+                    val request = scenario.httpRequestPattern.newBasedOn(requestExampleRow, scenario.resolver).first().generate(scenario.resolver)
+                    val response = scenario.httpResponsePattern.newBasedOn(responseExampleRow, scenario.resolver).first().generateResponse(scenario.resolver).withoutSpecmaticHeaders()
+                    ScenarioStub(request, response)
+                }
+            }
+        } else {
+            emptyList()
+        }
+    }
+    return out;
+}
+
 fun loadContractStubsFromImplicitPaths(contractPaths: List<String>): List<Pair<Feature, List<ScenarioStub>>> {
     return contractPaths.map { File(it) }.flatMap { contractPath ->
         when {

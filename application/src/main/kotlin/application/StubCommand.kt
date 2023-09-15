@@ -85,6 +85,9 @@ class StubCommand : Callable<Unit> {
     @Option(names = ["--logPrefix"], description = ["Prefix of log file"])
     var logPrefix: String = "specmatic"
 
+    @Option(names = ["--useExamplesAsStub"], description = ["Prefix of log file"])
+    var exampleAsStub: Boolean = false
+
     @Autowired
     val watchMaker = WatchMaker()
 
@@ -157,7 +160,7 @@ class StubCommand : Callable<Unit> {
 
     private fun startServer() {
         val workingDirectory = WorkingDirectory()
-        val stubData = stubLoaderEngine.loadStubs(contractPaths, dataDirs)
+        val stubData = stubLoaderEngine.loadStubs(contractPaths, dataDirs, exampleAsStub)
 
         val certInfo = CertInfo(keyStoreFile, keyStoreDir, keyStorePassword, keyStoreAlias, keyPassword)
 

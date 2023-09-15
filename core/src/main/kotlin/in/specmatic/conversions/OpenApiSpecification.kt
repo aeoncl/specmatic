@@ -5,10 +5,7 @@ import `in`.specmatic.core.Result.Failure
 import `in`.specmatic.core.log.LogStrategy
 import `in`.specmatic.core.log.logger
 import `in`.specmatic.core.pattern.*
-import `in`.specmatic.core.value.JSONObjectValue
-import `in`.specmatic.core.value.NumberValue
-import `in`.specmatic.core.value.StringValue
-import `in`.specmatic.core.value.Value
+import `in`.specmatic.core.value.*
 import `in`.specmatic.core.wsdl.parser.message.MULTIPLE_ATTRIBUTE_VALUE
 import `in`.specmatic.core.wsdl.parser.message.OCCURS_ATTRIBUTE_NAME
 import `in`.specmatic.core.wsdl.parser.message.OPTIONAL_ATTRIBUTE_VALUE
@@ -293,6 +290,28 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
                         }
                     }
 
+                    val specmaticResponseExampleRows: List<Row> = responseExamples.map { (exampleName, exampleData) ->
+
+                        val responseExample = responseBodyExample(operation, response, exampleName, exampleData).map { (key, value) ->
+                            if (value.toString().contains("externalValue")) "${key}_filename" to value
+                            else key to value
+                        }.toMap()
+
+                        when {
+                            responseExample.isNotEmpty() -> Row(
+                                    responseExample.keys.toList().map { keyName: String -> keyName },
+                                    responseExample.values.toList().map { value: Any? -> value?.toString() ?: "" }
+                                            .map { valueString: String ->
+                                                if (valueString.contains("externalValue")) {
+                                                    ObjectMapper().readValue(valueString, Map::class.java).values.first()
+                                                            .toString()
+                                                } else valueString
+                                            },
+                                    name = exampleName)
+                            else -> Row()
+                        }
+                    }
+
                     toHttpRequestPatterns(
                         specmaticPath, httpMethod, operation
                     ).map { httpRequestPattern: HttpRequestPattern ->
@@ -326,6 +345,15 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
                             }
                         }
 
+                        specmaticResponseExampleRows.forEach { row ->
+                            scenarioBreadCrumb(scenarioDetails) {
+                                httpResponsePattern.newBasedOn(
+                                        row,
+                                        Resolver(newPatterns = this.patterns).copy(mismatchMessages = Scenario.ContractAndRowValueMismatch)
+                                )
+                            }
+                        }
+
                         val ignoreFailure = operation.tags.orEmpty().map { it.trim() }.contains("WIP")
 
                         ScenarioInfo(
@@ -340,6 +368,12 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
                                     specmaticExampleRows
                                 )
                             ) else emptyList(),
+                                responseExamples =  if (specmaticResponseExampleRows.isNotEmpty()) listOf(
+                                        Examples(
+                                                specmaticResponseExampleRows.first().columnNames,
+                                                specmaticResponseExampleRows
+                                        )
+                                ) else emptyList(),
                             sourceProvider = sourceProvider,
                             sourceRepository = sourceRepository,
                             sourceRepositoryBranch = sourceRepositoryBranch,
@@ -351,6 +385,29 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
             }.flatten()
         }.flatten()
     }
+
+    private fun responseBodyExample(operation: Operation, response: ApiResponse, exampleName: String, exampleData: Example): Map<String, Any?> {
+        val responseExampleValue: Any? =
+                response.content?.values?.firstOrNull()?.examples?.get(exampleName)?.value
+
+        val responseBodyExample: Map<String, Any> = if (responseExampleValue != null) {
+            if (response.content?.entries?.first()?.key == "application/x-www-form-urlencoded" || response.content?.entries?.first()?.key == "multipart/form-data") {
+                val jsonExample =
+                        attempt("Could not parse example $exampleName for operation \"${operation.summary}\"") {
+                            parsedJSON(responseExampleValue.toString()) as JSONObjectValue
+                        }
+                jsonExample.jsonObject.map { (key, value) ->
+                    key to value.toString()
+                }.toMap()
+            } else {
+                mapOf("(RESPONSE-BODY)" to responseExampleValue)
+            }
+        } else {
+            emptyMap()
+        }
+        return responseBodyExample
+    }
+
 
     private fun requestBodyExample(
         operation: Operation,

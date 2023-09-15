@@ -1595,6 +1595,7 @@ internal fun lex(featureChildren: List<FeatureChild>, filePath: String): List<Sc
                 scenarioInfo.httpResponsePattern,
                 scenarioInfo.expectedServerState,
                 scenarioInfo.examples,
+                scenarioInfo.responseExamples,
                 scenarioInfo.patterns,
                 scenarioInfo.fixtures,
                 scenarioInfo.ignoreFailure,
