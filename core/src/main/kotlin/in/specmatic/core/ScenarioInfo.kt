@@ -12,6 +12,7 @@ data class ScenarioInfo(
     val patterns: Map<String, Pattern> = emptyMap(),
     val fixtures: Map<String, Value> = emptyMap(),
     val examples: List<Examples> = emptyList(),
+    val responseExamples: List<Examples> = emptyList(),
     val ignoreFailure: Boolean = false,
     val references: Map<String, References> = emptyMap(),
     val bindings: Map<String, String> = emptyMap(),

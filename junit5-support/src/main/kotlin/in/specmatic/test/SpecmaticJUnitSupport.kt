@@ -301,6 +301,7 @@ open class SpecmaticJUnitSupport {
                 HttpResponsePattern(),
                 emptyMap(),
                 listOf(examples),
+                emptyList(),
                 emptyMap(),
                 emptyMap(),
             )
