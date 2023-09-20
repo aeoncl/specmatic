@@ -1,6 +1,7 @@
 package `in`.specmatic.stub
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import `in`.specmatic.conversions.OpenApiSpecification
 import `in`.specmatic.core.*
 import `in`.specmatic.core.log.*
 import `in`.specmatic.core.pattern.ContractException
@@ -819,6 +820,21 @@ fun stringToMockScenario(text: Value): ScenarioStub {
         }
 
     return mockFromJSON(mockSpec)
+}
+
+fun openApicontractToMockScenarios(feature: Feature, spec: OpenApiSpecification): List<ScenarioStub> {
+    feature.scenarios.forEach { scenario ->
+        if (scenario.isA2xxScenario()) {
+            var exampleName = scenario.examples.firstOrNull()?.rows?.firstOrNull()?.name
+            if(exampleName != null ){
+                var test = spec.openApi.paths.get(scenario.path)
+                var test2 = 0
+            }
+
+        }
+    }
+
+    return emptyList()
 }
 
 data class SseEvent(val data: String? = "", val event: String? = null, val id: String? = null, val bufferIndex: Int? = null)

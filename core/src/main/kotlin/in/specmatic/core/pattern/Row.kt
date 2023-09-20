@@ -17,6 +17,19 @@ data class Row(
 ) {
     private val cells = columnNames.zip(values.map { it }).toMap().toMutableMap()
 
+    fun flattenResponseBodyIntoRow(): Row {
+        if (!this.containsField("(RESPONSE-BODY)")) {
+            return this
+        } else {
+            val jsonValue = parsedJSON(this.getField("(RESPONSE-BODY)"))
+            if (jsonValue !is JSONObjectValue)
+                throw ContractException("Only JSON objects are supported as request body examples")
+
+            val values: List<Pair<String, String>> = jsonObjectToValues(jsonValue)
+
+            return Row(columnNames = values.map { it.first }, values = values.map { it.second }, name = name)
+        }
+    }
     fun flattenRequestBodyIntoRow(): Row {
         val jsonValue = parsedJSON(this.getField("(REQUEST-BODY)"))
         if (jsonValue !is JSONObjectValue)

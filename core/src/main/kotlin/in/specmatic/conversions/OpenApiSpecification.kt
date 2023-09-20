@@ -5,6 +5,7 @@ import `in`.specmatic.core.Result.Failure
 import `in`.specmatic.core.log.LogStrategy
 import `in`.specmatic.core.log.logger
 import `in`.specmatic.core.pattern.*
+import `in`.specmatic.core.utilities.jsonStringToValueMap
 import `in`.specmatic.core.value.*
 import `in`.specmatic.core.wsdl.parser.message.MULTIPLE_ATTRIBUTE_VALUE
 import `in`.specmatic.core.wsdl.parser.message.OCCURS_ATTRIBUTE_NAME
@@ -733,7 +734,7 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
                     throw UnsupportedOperationException("Unsupported composed schema: $schema")
                 }
             }
-            is ByteArraySchema -> BinaryPattern()
+            is ByteArraySchema -> StringPattern()
             else -> {
                 if (schema.nullable == true && schema.additionalProperties == null && schema.`$ref` == null) {
                     NullPattern
