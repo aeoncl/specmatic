@@ -734,7 +734,7 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
                     throw UnsupportedOperationException("Unsupported composed schema: $schema")
                 }
             }
-            is ByteArraySchema -> StringPattern()
+            is ByteArraySchema -> Base64StringPattern()
             else -> {
                 if (schema.nullable == true && schema.additionalProperties == null && schema.`$ref` == null) {
                     NullPattern
