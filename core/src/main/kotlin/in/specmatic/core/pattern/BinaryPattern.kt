@@ -16,7 +16,6 @@ data class BinaryPattern(
     override fun matches(sampleData: Value?, resolver: Resolver): Result {
         return when (sampleData) {
             is StringValue -> return Result.Success()
-            is BinaryValue -> return Result.Success() //TODO remove this
             else -> mismatchResult("string", sampleData, resolver.mismatchMessages)
         }
     }

@@ -25,12 +25,6 @@ class StubLoaderEngine {
             else -> loadContractStubsFromImplicitPaths(contractPaths)
         }
 
-//        val openApiSpec = OpenApiSpecification.fromFile(contractPaths.first())
-//        contractStubs.map { featurePair ->
-//            openApicontractToMockScenarios(featurePair.first, openApiSpec)
-//
-//        }
-
         if (exampleAsStub) {
             contractStubs = contractStubs.map { featurePair ->
                 val stubs = createStubFromFeature(featurePair.first)

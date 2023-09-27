@@ -21,11 +21,14 @@ data class Row(
         if (!this.containsField("(RESPONSE-BODY)")) {
             return this
         } else {
-            val jsonValue = parsedJSON(this.getField("(RESPONSE-BODY)"))
-            if (jsonValue !is JSONObjectValue)
-                throw ContractException("Only JSON objects are supported as request body examples")
 
-            val values: List<Pair<String, String>> = jsonObjectToValues(jsonValue)
+
+            val value = parsedValue(this.getField("(RESPONSE-BODY)"))
+
+            if (value !is JSONObjectValue)
+                return this
+
+            val values: List<Pair<String, String>> = jsonObjectToValues(value)
 
             return Row(columnNames = values.map { it.first }, values = values.map { it.second }, name = name)
         }

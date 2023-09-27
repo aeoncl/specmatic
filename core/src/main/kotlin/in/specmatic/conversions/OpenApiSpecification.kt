@@ -457,7 +457,9 @@ class OpenApiSpecification(private val openApiFile: String, val openApi: OpenAPI
 
     private fun toHttpResponsePatterns(responses: ApiResponses?): List<Triple<ApiResponse, MediaType, HttpResponsePattern>> {
         return responses.orEmpty().map { (status, response) ->
-            val headersMap = openAPIHeadersToSpecmatic(response)
+            val headersMap = openAPIHeadersToSpecmatic(response).toMutableMap()
+            val mimeType = response.content.keys.first()
+            //headersMap.putIfAbsent("Content-Type", ExactValuePattern(StringValue(mimeType)))
             openAPIResponseToSpecmatic(response, status, headersMap)
         }.flatten()
     }

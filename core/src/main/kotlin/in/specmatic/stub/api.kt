@@ -6,6 +6,7 @@ import `in`.specmatic.core.*
 import `in`.specmatic.core.git.SystemGit
 import `in`.specmatic.core.log.logger
 import `in`.specmatic.core.log.StringLog
+import `in`.specmatic.core.pattern.Row
 import `in`.specmatic.core.utilities.contractStubPaths
 import `in`.specmatic.core.value.StringValue
 import `in`.specmatic.mock.*
@@ -71,7 +72,8 @@ fun createStubFromFeature(feature: Feature): List<ScenarioStub> {
                 requestExample.rows.mapIndexed { rowIndex, requestExampleRow ->
                     val responseExampleRow = responseExample.rows[rowIndex]
                     val request = scenario.httpRequestPattern.newBasedOn(requestExampleRow, scenario.resolver).first().generate(scenario.resolver)
-                    val response = scenario.httpResponsePattern.newBasedOn(responseExampleRow, scenario.resolver).first().generateResponse(scenario.resolver).withoutSpecmaticHeaders()
+
+                    val response = HttpResponse(200, responseExampleRow.getField("(RESPONSE-BODY)"), scenario.httpResponsePattern.headersPattern.generate(Resolver()))
                     ScenarioStub(request, response)
                 }
             }
